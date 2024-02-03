@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #1a1a1a; /* 暗黑主题背景颜色 */
+            color: #ffffff; /* 暗黑主题文字颜色 */
+            text-align: center; /* 居中显示 */
+            padding: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"] {
+            height: 30px;
+            padding: 3px;
+            margin-bottom: 10px;
+            width: 75%;
+            border: 1px solid #ffffff; /* 输入框边框颜色 */
+            background-color: #2b2b2b; /* 输入框背景颜色 */
+            color: #ffffff; /* 输入框文字颜色 */
+        }
+
+        button {
+            padding: 11px 10px;
+            background-color: #4CAF50; /* 按钮背景颜色 */
+            color: #ffffff; /* 按钮文字颜色 */
+            border: none;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background-color: #808080; /* 禁用状态的按钮背景颜色 */
+        }
+
+        audio {
+            width: 80%;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+<label for="textInput">跟我聊天吧:</label>
+<input type="text" id="textInput" placeholder="请在这里输入聊天内容" value="讲个笑话来听" onkeydown="handleKeyDown(event)">
+<button onclick="sendText()" id="sendButton">发送</button>
+
+<br><br>
+
+<audio id="audioPlayer" controls></audio>
+
+<script>
+    const socket = new WebSocket('ws://127.0.0.1:8080');
+    const audioPlayer = document.getElementById('audioPlayer');
+    let audioChunks = []; // Array to store audio chunks
+    let playing = false; // Flag to track whether audio is currently playing
+    const sendButton = document.getElementById('sendButton');
+
+    socket.onopen = function (event) {
+        console.log('WebSocket connection opened:', event);
+
+        //在连接成功后,马上发送校验token
+        socket.send(JSON.stringify({token: 'your_token_here' }));
+    };
+
+    socket.onmessage = function (event) {
+
+        let data = JSON.parse(event.data);
+        // console.info(data)
+        if (!data.audio){
+            console.info(data)
+            return false;
+        }
+
+        // Assuming the received data is base64-encoded audio
+        const audioBlob = new Blob([base64ToArrayBuffer(data.audio)], { type: 'audio/mp3' });
+
+        // Append the new audio chunk to the array
+        audioChunks.push(audioBlob);
+
+        // Combine all audio chunks into a single Blob
+        const combinedAudioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+
+        // Set the audio element source
+        audioPlayer.src = URL.createObjectURL(combinedAudioBlob);
+
+        // Wait for audio to be fully loaded before playing
+        audioPlayer.addEventListener('loadedmetadata', function() {
+            audioPlayer.play();
+        });
+    };
+
+
+    socket.onclose = function (event) {
+        console.log('WebSocket connection closed:', event);
+    };
+
+    function sendText() {
+        const textInput = document.getElementById('textInput');
+        const text = textInput.value;
+
+        // Clear previous audio chunks
+        audioChunks = [];
+
+        if (text.trim() !== '') {
+            // Disable the send button while waiting for response
+            sendButton.disabled = true;
+            let count = 1;
+            const countdownInterval = setInterval(() => {
+                count++;
+                sendButton.innerText = `稍后${count}`;
+            }, 1000);
+            socket.send(JSON.stringify({ text: text }));
+            textInput.value = ''; // Clear the input field
+
+            // Stop the countdown and reset the button when a response is received
+            socket.addEventListener('message', function () {
+                clearInterval(countdownInterval);
+                resetSendButton();
+            });
+        }
+    }
+
+    function resetSendButton() {
+        sendButton.disabled = false;
+        sendButton.innerText = '发送';
+    }
+
+    function base64ToArrayBuffer(base64) {
+        const binaryString = window.atob(base64);
+        const length = binaryString.length;
+        const bytes = new Uint8Array(length);
+
+        for (let i = 0; i < length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        return bytes.buffer;
+    }
+
+    function handleKeyDown(event) {
+        // Check if the pressed key is Enter (keyCode 13)
+        if (event.keyCode === 13) {
+            sendText();
+        }
+    }
+</script>
+</body>
+</html>
